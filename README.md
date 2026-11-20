@@ -46,6 +46,14 @@ Relaunching the app (Finder/Spotlight) opens Settings. The menu bar icon has Sho
 | Launch at login | none | Uses a LaunchAgent |
 | AI integration | none | Listens on `127.0.0.1` only, and only while enabled |
 
+## Speech bubbles & reminders
+
+Settings → **Notifications**. The character talks through pixel-style speech bubbles (Bahasa Indonesia or English):
+
+- **Reminders** – drink water, eye rest (20-20-20), posture, stretch, lunch, bedtime, plus any custom ones (repeat every N minutes, or daily at a time). Reminders have *Later 10m* / *OK* buttons, wait for a pause while you are typing, and are held back during **quiet hours**.
+- **Extras** – time-of-day greeting, welcome back after a long break, random chatter, "Geli ih!" when poked / "purr~" when petted, agent updates (done / error / needs you), and a break suggestion after ~45 min of non-stop typing (only key *counts* are used).
+- Optional 8-bit blip sound. Everything is driven by a single timer armed for the next due item, so there is no polling.
+
 ## Custom characters
 
 **Import does the cleanup for you** (Settings → Character → *Import PNG…*; both steps can be switched off):

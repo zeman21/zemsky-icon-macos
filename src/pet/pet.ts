@@ -2,6 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { DEFAULT_SETTINGS, type Settings, withDefaults } from "../shared/types";
 import { loadUserCharacter } from "../shared/api";
+import { Bubble } from "./bubble";
+import { Notifier } from "./notify";
 import {
   AGENT_ANIM, aggregateAgents, PRIORITY, StateMachine, TypingMeter, type AgentStateName,
 } from "./fsm";
@@ -25,6 +27,7 @@ export async function startPet() {
   });
   document.body.appendChild(canvas);
   const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+  const bubble = new Bubble();
 
   // ---------------------------------------------------------------- state
   let settings: Settings = DEFAULT_SETTINGS;
@@ -64,6 +67,24 @@ export async function startPet() {
   const agents = new Map<string, { state: AgentStateName; ts: number }>();
   let agentTimer: number | undefined;
 
+  // ---------------------------------------------------------------- speech bubbles & reminders
+  const notifier = new Notifier({
+    settings: () => settings,
+    typing: () => sm.has("typing", performance.now()),
+    close: () => bubble.hide(),
+    present: (text, o) => {
+      const now = performance.now();
+      const alert = o.buttons !== undefined; // reminders: perk up and wait for an answer
+      if (alert) { sm.hold("notify", "look", PRIORITY.notify); doJump(now); }
+      bubble.show(text, {
+        seconds: o.seconds, sound: o.sound, buttons: o.buttons,
+        onClose: () => { sm.release("notify"); o.onClose(); wake(); },
+      });
+      place(now);
+      wake();
+    },
+  });
+
   // ---------------------------------------------------------------- layout
   const dev = (v: number) => Math.round(v * dpr) / dpr;
 
@@ -97,6 +118,7 @@ export async function startPet() {
   function place(now = performance.now()) {
     const t = `translate3d(${dev(x - cw / 2)}px,${dev(y - ch - jumpOffset(now))}px,0)`;
     if (t !== lastTransform) { canvas.style.transform = t; lastTransform = t; }
+    if (bubble.visible) bubble.position(x, y - ch - jumpOffset(now), y, W);
   }
 
   function persistPosition() {
@@ -242,6 +264,7 @@ export async function startPet() {
         wake();
       }
       scheduleBlink();
+  window.setTimeout(() => notifier.greet(), 3500);
     }, rand(2500, 7000));
   }
 
@@ -263,7 +286,9 @@ export async function startPet() {
   }
 
   function markActivity(now = performance.now()) {
+    const gap = now - lastActivity;
     lastActivity = now;
+    if (gap > 15 * 60_000 && running) notifier.welcomeBack();
     if (sm.has("rest", now)) {
       const was = restKind;
       sm.release("rest"); restKind = null;
@@ -343,6 +368,7 @@ export async function startPet() {
     if (clicks.length >= 3 && sprite && hasAnim(sprite.cfg, "happy")) {
       clicks = [];
       sm.pulse("react", "happy", PRIORITY.jump + 1, now, 2400);
+      notifier.ouch();
       wake();
     } else doJump(now);
   }
@@ -368,6 +394,7 @@ export async function startPet() {
 
   // ---------------------------------------------------------------- hit testing / click-through
   function isOver(px: number, py: number, now = performance.now()): boolean {
+    if (bubble.contains(px, py)) return true;
     if (!sprite || canvas.style.display === "none") return false;
     const left = x - cw / 2, top = y - ch - jumpOffset(now);
     if (px < left || py < top || px >= left + cw || py >= top + ch) return false;
@@ -385,13 +412,14 @@ export async function startPet() {
     if (over !== overChar) {
       overChar = over;
       invoke("set_ignore_cursor", { ignore: !over }).catch(() => {});
-      document.body.style.cursor = over ? "grab" : "default";
+      const onBubble = bubble.contains(px, py);
+      document.body.style.cursor = over && !onBubble ? "grab" : "default";
       window.clearTimeout(hoverTimer);
-      if (over && !dragging) {
+      if (over && !dragging && !onBubble) {
         hoverTimer = window.setTimeout(() => {
           const now = performance.now();
           if (overChar && !dragging && settings.mouseInteraction && sprite && hasAnim(sprite.cfg, "happy")
-            && sm.pulse("hover", "happy", PRIORITY.agentDone, now, 2200, 8000)) { bump(0.1); wake(); }
+            && sm.pulse("hover", "happy", PRIORITY.agentDone, now, 2200, 8000)) { bump(0.1); notifier.purr(); wake(); }
         }, 1600);
       }
     }
@@ -418,7 +446,7 @@ export async function startPet() {
 
   // ---------------------------------------------------------------- pointer (drag / click)
   window.addEventListener("pointerdown", (e) => {
-    if (e.button !== 0 || !isOver(e.clientX, e.clientY)) return;
+    if (e.button !== 0 || bubble.contains(e.clientX, e.clientY) || !isOver(e.clientX, e.clientY)) return;
     down = { x: e.clientX, y: e.clientY, id: e.pointerId };
     grab = { x: x - e.clientX, y: y - e.clientY };
     try { document.documentElement.setPointerCapture(e.pointerId); } catch { /* ignore */ }
@@ -495,6 +523,7 @@ export async function startPet() {
       }
     }
     applyAgents();
+    if (p.state === "completed" || p.state === "error" || p.state === "waiting") notifier.agent(p.state, p.agent);
     wake();
   }
 
@@ -530,6 +559,7 @@ export async function startPet() {
     anim = sprite ? resolveAnim(sprite.cfg, state, next.fps) : null;
     updateRest();
     scheduleWander();
+    notifier.sync();
     wake();
   }
 
@@ -541,6 +571,7 @@ export async function startPet() {
     window.clearTimeout(restTimer); window.clearTimeout(wanderTimer); window.clearTimeout(agentTimer); window.clearTimeout(quirkTimer);
     restTimer = undefined;
     canvas.style.display = "none";
+    notifier.stop();
   }
 
   function resume() {
@@ -559,6 +590,7 @@ export async function startPet() {
     if (!running || !settings.keyboardInteraction) return;
     const now = performance.now();
     meter.hit(now);
+    notifier.onKey(Date.now());
     sm.pulse("typing", "typing", PRIORITY.typing, now, 1400);
     if (meter.isFast(now)) sm.pulse("excited", "happy", PRIORITY.excited, now, 1600);
     markActivity(now);
@@ -574,6 +606,7 @@ export async function startPet() {
     if (!running) return;
     const now = performance.now();
     if (e.payload === "jump") { markActivity(now); doJump(now); }
+    if (e.payload.startsWith("say:")) notifier.say(e.payload.slice(4, 300));
     if (e.payload === "reset-position") { x = W * pos.x; y = H * pos.y; clampPos(); place(); wake(); }
   });
   await listen("pet-refit", () => { layout(); });

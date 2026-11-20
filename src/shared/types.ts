@@ -17,6 +17,59 @@ export const AGENTS = ["claude", "codex", "cursor", "antigravity", "opencode", "
 export type AgentId = (typeof AGENTS)[number];
 export type AgentState = "idle" | "thinking" | "working" | "waiting" | "completed" | "error";
 
+export interface Reminder {
+  id: string;
+  emoji: string;
+  kind: "interval" | "daily";
+  /** Minutes between reminders (interval). */
+  every: number;
+  /** "HH:MM" (daily). */
+  time: string;
+  /** Custom text; empty for built-ins (they use localized lines). */
+  text: string;
+  enabled: boolean;
+  builtin?: boolean;
+}
+
+export interface NotifySettings {
+  enabled: boolean;
+  language: "id" | "en";
+  bubbleSeconds: number;
+  sound: boolean;
+  quiet: { enabled: boolean; from: string; to: string };
+  greetings: boolean;
+  chatter: boolean;
+  chatterEvery: number;
+  agentReactions: boolean;
+  praise: boolean;
+  reactions: boolean;
+  reminders: Reminder[];
+}
+
+export const DEFAULT_REMINDERS: Reminder[] = [
+  { id: "water", emoji: "💧", kind: "interval", every: 45, time: "", text: "", enabled: true, builtin: true },
+  { id: "eyes", emoji: "👀", kind: "interval", every: 20, time: "", text: "", enabled: false, builtin: true },
+  { id: "posture", emoji: "🧘", kind: "interval", every: 60, time: "", text: "", enabled: true, builtin: true },
+  { id: "stretch", emoji: "🙆", kind: "interval", every: 90, time: "", text: "", enabled: false, builtin: true },
+  { id: "lunch", emoji: "🍙", kind: "daily", every: 60, time: "12:00", text: "", enabled: false, builtin: true },
+  { id: "sleep", emoji: "😴", kind: "daily", every: 60, time: "23:30", text: "", enabled: false, builtin: true },
+];
+
+export const DEFAULT_NOTIFY: NotifySettings = {
+  enabled: true,
+  language: "id",
+  bubbleSeconds: 8,
+  sound: false,
+  quiet: { enabled: false, from: "22:00", to: "07:00" },
+  greetings: true,
+  chatter: true,
+  chatterEvery: 25,
+  agentReactions: true,
+  praise: true,
+  reactions: true,
+  reminders: DEFAULT_REMINDERS,
+};
+
 export interface Settings {
   enabled: boolean;
   launchAtLogin: boolean;
@@ -36,6 +89,7 @@ export interface Settings {
   sitAfter: number;
   sleepAfter: number;
   agent: { enabled: boolean; port: number; agents: Record<AgentId, boolean> };
+  notify: NotifySettings;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -61,6 +115,7 @@ export const DEFAULT_SETTINGS: Settings = {
     port: 47321,
     agents: { claude: true, codex: true, cursor: true, antigravity: true, opencode: true, custom: true },
   },
+  notify: DEFAULT_NOTIFY,
 };
 
 export function withDefaults(raw: Partial<Settings> | null | undefined): Settings {
@@ -73,6 +128,12 @@ export function withDefaults(raw: Partial<Settings> | null | undefined): Setting
       ...DEFAULT_SETTINGS.agent,
       ...(r.agent ?? {}),
       agents: { ...DEFAULT_SETTINGS.agent.agents, ...(r.agent?.agents ?? {}) },
+    },
+    notify: {
+      ...DEFAULT_NOTIFY,
+      ...(r.notify ?? {}),
+      quiet: { ...DEFAULT_NOTIFY.quiet, ...(r.notify?.quiet ?? {}) },
+      reminders: Array.isArray(r.notify?.reminders) ? r.notify!.reminders : DEFAULT_NOTIFY.reminders,
     },
   };
 }

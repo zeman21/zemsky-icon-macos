@@ -4,11 +4,13 @@ import { General } from "./tabs/General";
 import { CharacterTab } from "./tabs/Character";
 import { Behavior } from "./tabs/Behavior";
 import { AiTab } from "./tabs/Ai";
+import { Notifications } from "./tabs/Notifications";
 
 const TABS = [
   { id: "general", label: "General", icon: "⚙️" },
   { id: "character", label: "Character", icon: "🐱" },
   { id: "behavior", label: "Behavior", icon: "✨" },
+  { id: "notify", label: "Notifications", icon: "💬" },
   { id: "ai", label: "AI Integration", icon: "🤖" },
 ] as const;
 type TabId = (typeof TABS)[number]["id"];
@@ -33,6 +35,7 @@ export function App() {
         {tab === "general" && <General {...p} />}
         {tab === "character" && <CharacterTab {...p} />}
         {tab === "behavior" && <Behavior {...p} />}
+        {tab === "notify" && <Notifications {...p} />}
         {tab === "ai" && <AiTab {...p} />}
       </main>
     </div>
