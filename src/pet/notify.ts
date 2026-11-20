@@ -18,6 +18,13 @@ export interface Host {
 
 interface Say { text: string; kind: "reminder" | "chat" | "test" }
 
+export function fmtDuration(secs: number): string {
+  const s = Math.round(secs);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  return m < 60 ? `${m}m ${s % 60}s` : `${Math.floor(m / 60)}h ${m % 60}m`;
+}
+
 const SNOOZE_MS = 10 * 60_000;
 const MIN_CHAT_GAP = 20_000;
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
@@ -175,12 +182,15 @@ export class Notifier {
   greet() { this.chat(timeGreeting(new Date(), this.n.language), this.n.greetings, true); }
   welcomeBack() { this.chat(pick(this.n.language, "welcome"), this.n.greetings, true); }
   ouch() { this.chat(pick(this.n.language, "ouch"), this.n.reactions, true); }
+  /** Short status remark (sit / stand) that bypasses the chatter cooldown. */
+  remark(key: "sit" | "stand") { this.chat(pick(this.n.language, key), this.n.reactions, true); }
   purr() { this.chat(pick(this.n.language, "purr"), this.n.reactions); }
 
-  agent(kind: "completed" | "error" | "waiting", agent: string) {
+  agent(kind: "completed" | "error" | "waiting", agent: string, secs?: number) {
     const key: LineKey = kind === "completed" ? "agentDone" : kind === "error" ? "agentError" : "agentWait";
     const label = AGENT_LABEL[agent] ?? agent;
-    this.chat(`${pick(this.n.language, key)}  · ${label}`, this.n.agentReactions, kind !== "waiting");
+    const took = secs !== undefined && secs >= 15 && kind !== "waiting" ? ` (${fmtDuration(secs)})` : "";
+    this.chat(`${pick(this.n.language, key)}  · ${label}${took}`, this.n.agentReactions, kind !== "waiting");
   }
 
   /** Called on every key press: after ~45 min of continuous typing, suggest a break. */

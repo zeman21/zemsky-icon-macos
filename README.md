@@ -84,6 +84,20 @@ Frames are numbered left-to-right, top-to-bottom. Sprites should face **right** 
 
 ## AI coding agents
 
+**Fastest way:** Settings → AI Integration → *Connect your tools*. One click installs (and removes) the hooks for Claude Code, Cursor, Codex and OpenCode, and a zsh integration for **any command** (builds, tests, scripts, and agents without hooks such as Antigravity). Config files are backed up (`*.bak-pixelmate-<time>`), existing hooks are kept, and installing twice never duplicates entries.
+
+| Pet reaction | Meaning |
+|---|---|
+| thinking pose | agent got your prompt |
+| typing on a laptop | running tools / commands |
+| looking around + bubble | waiting for your permission / input |
+| happy + hearts + bubble "(2m 14s)" | finished |
+| sad + sweat drop | failed |
+
+Wrap any command by hand with `pixelmate-run npm test` (it keeps the command's exit code). The terminal integration stays silent for commands under 5 s and for interactive programs (vim, ssh, claude, …).
+
+Manual setup details:
+
 Enable Settings → AI Integration. PixelMate then listens on `127.0.0.1:47321` for events and maps normalized states to animations: thinking → thinking, working → typing, waiting → looking around, completed → happy, error → sad. Settings has copy-paste setup snippets and a **Test animation** simulator.
 
 Send events with the helper (written to `~/Library/Application Support/com.pixelmate.app/bin/pixelmate-notify`) or plain HTTP:

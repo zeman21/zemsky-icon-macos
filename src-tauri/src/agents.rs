@@ -17,7 +17,7 @@ pub fn normalize(raw: &str) -> Option<&'static str> {
         "idle" | "reset" | "sessionend" | "sessionstart" | "sessiondeleted" => "idle",
         "thinking" | "userpromptsubmit" | "beforesubmitprompt" | "posttooluse" | "sessionbusy" | "sessionstatusbusy" => "thinking",
         "working" | "pretooluse" | "beforeshellexecution" | "beforemcpexecution" | "afterfileedit" | "toolexecutebefore" => "working",
-        "waiting" | "notification" | "permissionasked" | "permissionupdated" | "permissionrequest" => "waiting",
+        "waiting" | "notification" | "permissionasked" | "permissionupdated" | "permissionrequest" | "approvalrequested" | "elicitation" => "waiting",
         "completed" | "complete" | "done" | "stop" | "agentturncomplete" | "sessionidlecompleted" | "sessionidle" => "completed",
         "error" | "failed" | "failure" | "sessionerror" | "stopfailure" => "error",
         _ => return None,
@@ -87,13 +87,69 @@ pub fn stop(h: &ServerHandle) {
     h.unblock();
 }
 
-/// Helper script agents can call: `pixelmate-notify <agent> <event> [ignored...]`.
+/// Helper scripts written to `<app data>/bin`.
 pub const NOTIFY_SCRIPT: &str = r#"#!/bin/sh
-# PixelMate helper: tells the pet what an AI agent is doing. Safe to call when PixelMate is not running.
-# usage: pixelmate-notify <agent> <event|state> [extra args are ignored]
+# PixelMate helper: tells the pet what an AI agent / command is doing.
+# Safe to call when PixelMate is not running.
+# usage: pixelmate-notify <agent> <event|state>      (extra args are ignored)
+#        pixelmate-notify codex -                     (Codex passes its JSON payload as the last argument)
+# states: idle | thinking | working | waiting | completed | error
 PORT="${PIXELMATE_PORT:-47321}"
-curl -s -m 1 -X POST "http://127.0.0.1:${PORT}/event?agent=$1&event=$2" >/dev/null 2>&1 || true
+AGENT="$1"; EVENT="$2"
+if [ "$EVENT" = "-" ]; then
+  for last; do :; done
+  EVENT=$(printf '%s' "$last" | sed -n 's/.*"type" *: *"\([^"]*\)".*/\1/p')
+fi
+if [ "$AGENT" = "cursor" ]; then
+  # Cursor hooks may gate actions on a JSON reply; always allow. A failed stop reports an error.
+  PAYLOAD=$(head -c 8192 2>/dev/null)
+  case "$EVENT" in
+    stop) case "$PAYLOAD" in *'"status":"error"'*|*'"status": "error"'*) EVENT=error;; esac;;
+  esac
+  printf '{"continue":true,"permission":"allow"}\n'
+fi
+[ -n "$EVENT" ] && curl -s -m 1 -X POST "http://127.0.0.1:${PORT}/event?agent=${AGENT}&event=${EVENT}" >/dev/null 2>&1
 exit 0
+"#;
+
+pub const RUN_SCRIPT: &str = r#"#!/bin/sh
+# Wrap any command so the pet reacts: working while it runs, then happy (exit 0) or sad (non-zero).
+# usage: pixelmate-run [--agent name] <command> [args...]
+AGENT="${PIXELMATE_AGENT:-shell}"
+if [ "$1" = "--agent" ]; then AGENT="$2"; shift 2; fi
+N="$(dirname "$0")/pixelmate-notify"
+"$N" "$AGENT" working
+"$@"
+rc=$?
+if [ $rc -eq 0 ]; then "$N" "$AGENT" completed; else "$N" "$AGENT" error; fi
+exit $rc
+"#;
+
+pub const SHELL_ZSH: &str = r#"# PixelMate shell integration (zsh): long-running commands make the pet react.
+# working after 5s, then happy on success / sad on failure. Short commands stay silent.
+zmodload zsh/datetime 2>/dev/null
+autoload -Uz add-zsh-hook
+_pm_dir=${${(%):-%x}:A:h}
+_pm_skip=(vim nvim vi nano emacs less more man top htop btop ssh mosh tail watch fzf claude codex cursor aider opencode gemini tmux screen)
+_pm_preexec() {
+  _pm_t=$EPOCHSECONDS
+  _pm_skipthis=0
+  (( ${_pm_skip[(Ie)${${(z)1}[1]}]} )) && _pm_skipthis=1
+  (( _pm_skipthis )) && return
+  { sleep 5; "$_pm_dir/pixelmate-notify" shell working; } &!
+  _pm_w=$!
+}
+_pm_precmd() {
+  local rc=$?
+  [[ -n ${_pm_w-} ]] && kill ${_pm_w} 2>/dev/null
+  _pm_w=
+  if [[ -n ${_pm_t-} && ${_pm_skipthis-0} -eq 0 ]] && (( EPOCHSECONDS - _pm_t >= 5 )); then
+    if (( rc == 0 )); then "$_pm_dir/pixelmate-notify" shell completed &!; else "$_pm_dir/pixelmate-notify" shell error &!; fi
+  fi
+  _pm_t=
+}
+add-zsh-hook preexec _pm_preexec
+add-zsh-hook precmd _pm_precmd
 "#;
 
 #[cfg(test)]
@@ -106,6 +162,8 @@ mod tests {
         assert_eq!(normalize("Stop"), Some("completed"));
         assert_eq!(normalize("agent-turn-complete"), Some("completed"));
         assert_eq!(normalize("session.error"), Some("error"));
+        assert_eq!(normalize("PermissionRequest"), Some("waiting"));
+        assert_eq!(normalize("StopFailure"), Some("error"));
         assert_eq!(normalize("bogus"), None);
     }
     #[test]

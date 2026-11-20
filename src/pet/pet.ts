@@ -11,7 +11,7 @@ import {
   buildSprite, drawFrame, hasAnim, loadBuiltinCat, resolveAnim, type LoadedSprite, type ResolvedAnim,
 } from "./sprite";
 
-const AGENT_STALE_MS = 10 * 60_000;
+const AGENT_STALE_MS = 30 * 60_000;
 const ERROR_MS = 8000;
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
 
@@ -56,6 +56,7 @@ export async function startPet() {
   let lastLookPos = { x: -1e4, y: -1e4 };
   let lastActivity = performance.now();
   let restKind: "sit" | "sleep" | null = null;
+  let stay = false; // "sit & stay" requested by the user
   let lingerAt = Infinity;
   let lunge: { x0: number; x1: number; start: number; dur: number } | null = null;
   let clicks: number[] = [];
@@ -66,6 +67,7 @@ export async function startPet() {
   let restTimer: number | undefined, wanderTimer: number | undefined, saveTimer: number | undefined;
   const agents = new Map<string, { state: AgentStateName; ts: number }>();
   let agentTimer: number | undefined;
+  const agentStart = new Map<string, number>(); // when each agent started working (for "took 2m 14s")
 
   // ---------------------------------------------------------------- speech bubbles & reminders
   const notifier = new Notifier({
@@ -240,7 +242,7 @@ export async function startPet() {
   function wander() {
     const now = performance.now();
     const cur = sm.current(now).state;
-    if (running && settings.randomMotion && !settings.followCursor && !moveTarget && (cur === "idle" || cur === "blink")) {
+    if (running && !stay && settings.randomMotion && !settings.followCursor && !moveTarget && (cur === "idle" || cur === "blink")) {
       let dir = Math.random() < 0.5 ? -1 : 1;
       const dist = rand(80, 320);
       let tx = x + dir * dist;
@@ -324,7 +326,7 @@ export async function startPet() {
 
   function runQuirk() {
     const now = performance.now();
-    if (!running || !sprite || dragging || moveTarget || lunge) return;
+    if (!running || !sprite || dragging || moveTarget || lunge || stay) return;
     if (!["idle", "blink", "sit"].includes(sm.current(now).state)) return;
     const pool = quirkPool(now);
     if (!pool.length) return;
@@ -374,7 +376,7 @@ export async function startPet() {
   }
 
   function updateFollow() {
-    if (!settings.followCursor || !settings.mouseInteraction || !cursor || dragging) return;
+    if (!settings.followCursor || !settings.mouseInteraction || !cursor || dragging || stay) return;
     const dx = cursor.x - x, dy = cursor.y - y, dist = Math.hypot(dx, dy);
     if (dist < 90) { if (moveTarget) { moveTarget = null; sm.release("move"); } return; }
     const k = (dist - 60) / dist;
@@ -510,6 +512,9 @@ export async function startPet() {
     if (!allowed) return;
     const now = performance.now();
     markActivity(now);
+    if ((p.state === "thinking" || p.state === "working") && !agentStart.has(p.agent)) agentStart.set(p.agent, now);
+    const took = agentStart.has(p.agent) ? (now - agentStart.get(p.agent)!) / 1000 : undefined;
+    if (p.state === "completed" || p.state === "error" || p.state === "idle") agentStart.delete(p.agent);
     if (p.state === "completed") {
       agents.set(p.agent, { state: "idle", ts: now });
       sm.pulse("agentDone", "happy", PRIORITY.agentDone, now, 3200);
@@ -523,7 +528,7 @@ export async function startPet() {
       }
     }
     applyAgents();
-    if (p.state === "completed" || p.state === "error" || p.state === "waiting") notifier.agent(p.state, p.agent);
+    if (p.state === "completed" || p.state === "error" || p.state === "waiting") notifier.agent(p.state, p.agent, took);
     wake();
   }
 
@@ -606,6 +611,14 @@ export async function startPet() {
     if (!running) return;
     const now = performance.now();
     if (e.payload === "jump") { markActivity(now); doJump(now); }
+    if (e.payload === "toggle-sit") {
+      stay = !stay;
+      markActivity(now);
+      if (stay) { moveTarget = null; sm.release("move"); lunge = null; sm.hold("stay", "sit", PRIORITY.stay); }
+      else sm.release("stay");
+      notifier.remark(stay ? "sit" : "stand");
+      wake();
+    }
     if (e.payload.startsWith("say:")) notifier.say(e.payload.slice(4, 300));
     if (e.payload === "reset-position") { x = W * pos.x; y = H * pos.y; clampPos(); place(); wake(); }
   });

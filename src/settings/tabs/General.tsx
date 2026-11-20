@@ -22,6 +22,7 @@ export function General({ settings: s, update }: TabProps) {
       </Group>
       <Group title="Quick actions">
         <Row label="Say hi" desc="Make the character jump."><button className="btn" onClick={() => petAction("jump")}>Jump</button></Row>
+        <Row label="Sit & stay" desc="Make the character sit still until you press it again."><button className="btn" onClick={() => petAction("toggle-sit")}>Sit / Stand</button></Row>
         <Row label="Reset position" desc="Bring the character back if it got lost.">
           <button className="btn" onClick={() => { update({ position: { x: 0.5, y: 0.92 }, enabled: true }); petAction("reset-position"); }}>Reset</button>
         </Row>

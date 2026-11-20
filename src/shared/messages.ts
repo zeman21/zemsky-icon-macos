@@ -24,6 +24,8 @@ const LINES = {
     ouch: ["Geli ih! 🤭", "Hehe jangan dipencet terus~ 💕", "Mrrrow! 😹"],
     purr: ["purr~ 💕", "prrr... enak 😌", "Nyaman banget~ 🥰"],
     snooze: ["Oke, nanti aku ingetin lagi 🐾", "Siap, 10 menit lagi ya ⏰"],
+    sit: ["Duduk manis~ 🐾", "Oke, aku duduk di sini ya 🪑"],
+    stand: ["Yuk jalan lagi! 🐾", "Bebas deh~ 🏃"],
     ok: "OK", later: "Nanti 10m",
   },
   en: {
@@ -47,6 +49,8 @@ const LINES = {
     ouch: ["That tickles! 🤭", "Hehe stop poking~ 💕", "Mrrrow! 😹"],
     purr: ["purr~ 💕", "prrr... nice 😌", "So cozy~ 🥰"],
     snooze: ["Okay, I'll remind you later 🐾", "Got it, 10 more minutes ⏰"],
+    sit: ["Sitting pretty~ 🐾", "Okay, I'll stay right here 🪑"],
+    stand: ["Let's roam again! 🐾", "Free at last~ 🏃"],
     ok: "OK", later: "Later 10m",
   },
 } as const;
@@ -78,5 +82,5 @@ export function timeGreeting(date: Date, lang: Lang, rnd: () => number = Math.ra
 }
 
 export const AGENT_LABEL: Record<string, string> = {
-  claude: "Claude Code", codex: "Codex", cursor: "Cursor", antigravity: "Antigravity", opencode: "OpenCode", custom: "Agent", test: "Test",
+  claude: "Claude Code", shell: "Terminal", codex: "Codex", cursor: "Cursor", antigravity: "Antigravity", opencode: "OpenCode", custom: "Agent", test: "Test",
 };

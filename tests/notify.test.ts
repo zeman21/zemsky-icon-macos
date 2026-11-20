@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { inQuiet, nextDue, parseHM, quietEnd, sig } from "../src/pet/reminders";
 import { pick, reminderText, timeGreeting } from "../src/shared/messages";
-import { Notifier, type Host, type PresentOpts } from "../src/pet/notify";
+import { fmtDuration, Notifier, type Host, type PresentOpts } from "../src/pet/notify";
 import { DEFAULT_SETTINGS, withDefaults, type Reminder, type Settings } from "../src/shared/types";
 
 const at = (h: number, m = 0) => new Date(2026, 10, 20, h, m, 0, 0);
@@ -95,5 +95,24 @@ describe("Notifier", () => {
     const { n, shown } = harness({ enabled: false });
     n.say("x"); n.agent("completed", "claude");
     expect(shown).toHaveLength(0);
+  });
+});
+
+describe("agent bubbles", () => {
+  it("formats durations", () => {
+    expect(fmtDuration(42)).toBe("42s");
+    expect(fmtDuration(134)).toBe("2m 14s");
+    expect(fmtDuration(3900)).toBe("1h 5m");
+  });
+  it("mentions the agent and how long it took", () => {
+    const { n, shown } = harness();
+    n.agent("completed", "claude", 134);
+    expect(shown[0].text).toMatch(/Claude Code \(2m 14s\)/);
+  });
+  it("omits the duration for quick tasks and for waiting", () => {
+    const a = harness(); a.n.agent("completed", "cursor", 5);
+    expect(a.shown[0].text).not.toMatch(/\(/);
+    const b = harness(); b.n.agent("waiting", "claude", 300);
+    expect(b.shown[0].text).not.toMatch(/\(\d/);
   });
 });

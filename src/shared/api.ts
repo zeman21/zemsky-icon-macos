@@ -25,6 +25,8 @@ export const listMonitors = () => invoke<{ name: string; width: number; height: 
 export const petAction = (name: string) => invoke<void>("pet_action", { name });
 export const agentEvent = (agent: string, event: string) => invoke<string>("agent_event", { agent, event });
 export const agentHelperPath = () => invoke<string | null>("agent_helper_path");
+export const integrationStatus = () => invoke<Record<string, boolean>>("integration_status");
+export const integrationSet = (agent: string, install: boolean) => invoke<string>("integration_set", { agent, install });
 export const keyboardPermission = () => invoke<boolean>("keyboard_permission");
 export const requestKeyboardPermission = () => invoke<boolean>("request_keyboard_permission");
 export const openPrivacySettings = () => invoke<void>("open_privacy_settings");

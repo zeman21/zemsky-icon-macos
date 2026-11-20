@@ -1,6 +1,7 @@
 mod agents;
 mod characters;
 mod input;
+mod integrations;
 mod settings;
 
 use serde_json::{json, Value};
@@ -90,19 +91,30 @@ fn open_settings_window(app: &AppHandle) {
 
 // ---------------------------------------------------------------- settings side effects
 
-fn write_notify_script(app: &AppHandle) -> Option<String> {
+/// Writes the helper scripts and returns the bin directory.
+fn write_helpers(app: &AppHandle) -> Option<std::path::PathBuf> {
     let dir = app.path().app_data_dir().ok()?.join("bin");
     fs::create_dir_all(&dir).ok()?;
-    let path = dir.join("pixelmate-notify");
-    if fs::read_to_string(&path).ok().as_deref() != Some(agents::NOTIFY_SCRIPT) {
-        fs::write(&path, agents::NOTIFY_SCRIPT).ok()?;
+    for (name, body) in [
+        ("pixelmate-notify", agents::NOTIFY_SCRIPT),
+        ("pixelmate-run", agents::RUN_SCRIPT),
+        ("pixelmate-shell.zsh", agents::SHELL_ZSH),
+    ] {
+        let path = dir.join(name);
+        if fs::read_to_string(&path).ok().as_deref() != Some(body) {
+            fs::write(&path, body).ok()?;
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(&path, fs::Permissions::from_mode(0o755));
+        }
     }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = fs::set_permissions(&path, fs::Permissions::from_mode(0o755));
-    }
-    Some(path.to_string_lossy().to_string())
+    Some(dir)
+}
+
+fn write_notify_script(app: &AppHandle) -> Option<String> {
+    write_helpers(app).map(|d| d.join("pixelmate-notify").to_string_lossy().to_string())
 }
 
 fn apply(app: &AppHandle, s: &Value) {
@@ -229,6 +241,25 @@ fn agent_helper_path(app: AppHandle) -> Option<String> {
 }
 
 #[tauri::command]
+fn integration_status(app: AppHandle) -> Result<Value, String> {
+    let home = app.path().home_dir().map_err(|e| e.to_string())?;
+    Ok(integrations::status(&home))
+}
+
+#[tauri::command]
+fn integration_set(app: AppHandle, agent: String, install: bool) -> Result<String, String> {
+    let home = app.path().home_dir().map_err(|e| e.to_string())?;
+    let dir = write_helpers(&app).ok_or("could not write helper scripts")?;
+    let port = app.state::<SettingsStore>().get()["agent"]["port"].as_u64().unwrap_or(47321) as u16;
+    let msg = integrations::install(&home, &dir, port, &agent, install)?;
+    if install {
+        // make sure the listener is up so the first event is not lost
+        update_settings(&app, &json!({"agent": {"enabled": true}}));
+    }
+    Ok(msg)
+}
+
+#[tauri::command]
 fn keyboard_permission() -> bool {
     input::key_permission()
 }
@@ -318,12 +349,13 @@ fn build_tray(app: &AppHandle, s: &Value) -> tauri::Result<()> {
     let show = CheckMenuItem::with_id(app, "toggle", "Show Character", true, bool_of(s, "enabled", true), None::<&str>)?;
     let on_top = CheckMenuItem::with_id(app, "ontop", "Always on Top", true, bool_of(s, "alwaysOnTop", true), None::<&str>)?;
     let jump = MenuItem::with_id(app, "jump", "Say Hi (Jump)", true, None::<&str>)?;
+    let sit = MenuItem::with_id(app, "sit", "Sit / Stand Up", true, None::<&str>)?;
     let reset = MenuItem::with_id(app, "reset", "Reset Position", true, None::<&str>)?;
     let settings = MenuItem::with_id(app, "settings", "Settings…", true, Some("Cmd+,"))?;
     let quit = MenuItem::with_id(app, "quit", "Quit PixelMate", true, Some("Cmd+Q"))?;
     let sep1 = PredefinedMenuItem::separator(app)?;
     let sep2 = PredefinedMenuItem::separator(app)?;
-    let menu = Menu::with_items(app, &[&show, &on_top, &jump, &reset, &sep1, &settings, &sep2, &quit])?;
+    let menu = Menu::with_items(app, &[&show, &on_top, &jump, &sit, &reset, &sep1, &settings, &sep2, &quit])?;
 
     TrayIconBuilder::with_id("tray")
         .icon(tauri::include_image!("icons/tray.png"))
@@ -341,6 +373,9 @@ fn build_tray(app: &AppHandle, s: &Value) -> tauri::Result<()> {
             }
             "jump" => {
                 let _ = app.emit("pet-action", "jump");
+            }
+            "sit" => {
+                let _ = app.emit("pet-action", "toggle-sit");
             }
             "reset" => {
                 update_settings(app, &json!({"position": settings::defaults()["position"].clone(), "enabled": true}));
@@ -371,6 +406,8 @@ pub fn run() {
             pet_action,
             agent_event,
             agent_helper_path,
+            integration_status,
+            integration_set,
             keyboard_permission,
             request_keyboard_permission,
             open_privacy_settings,

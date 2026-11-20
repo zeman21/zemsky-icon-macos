@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { agentEvent, agentHelperPath } from "../../shared/api";
+import { agentEvent, agentHelperPath, integrationSet, integrationStatus } from "../../shared/api";
 import { AGENTS, type AgentId } from "../../shared/types";
 import { Group, Page, Row, Select, Toggle } from "../ui";
 import type { TabProps } from "./types";
@@ -8,6 +8,15 @@ import type { TabProps } from "./types";
 const NAMES: Record<AgentId, string> = {
   claude: "Claude Code", codex: "OpenAI Codex CLI", cursor: "Cursor", antigravity: "Google Antigravity", opencode: "OpenCode", custom: "Custom / other",
 };
+
+const CONNECT = [
+  { id: "claude", label: "Claude Code", desc: "Thinking, tools, permission prompts, done, API failures. Edits ~/.claude/settings.json (backup kept, your hooks untouched)." },
+  { id: "cursor", label: "Cursor", desc: "Prompt sent, shell/file activity, stop (error if it fails). Edits ~/.cursor/hooks.json." },
+  { id: "codex", label: "OpenAI Codex CLI", desc: "Reports when a turn completes (all Codex exposes). Adds a notify line to ~/.codex/config.toml." },
+  { id: "opencode", label: "OpenCode", desc: "Session idle/error, permission asks, tool use via a small plugin." },
+  { id: "shell", label: "Terminal (any command)", desc: "zsh: builds, tests and scripts over 5 s make the pet work, then cheer or sulk. Also covers Antigravity and agents without hooks. Wrap one command with pixelmate-run." },
+  { id: "antigravity", label: "Google Antigravity", desc: "No hook or event API I could verify, so it can't be connected directly. The Terminal option reacts to commands it runs in your shell." },
+];
 
 const SUPPORT: Record<AgentId, string> = {
   claude: "Full: Claude Code hooks report prompt submit, tool use, notifications and stop.",
@@ -53,6 +62,17 @@ export function AiTab({ settings: s, update }: TabProps) {
   const [pick, setPick] = useState<AgentId>("claude");
   const [server, setServer] = useState<{ running: boolean; error?: string } | null>(null);
   const [copied, setCopied] = useState(false);
+  const [inst, setInst] = useState<Record<string, boolean>>({});
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState("");
+  const refresh = () => integrationStatus().then(setInst).catch(() => {});
+  useEffect(() => { void refresh(); }, []);
+  async function toggleInstall(id: string) {
+    setBusy(id);
+    try { setNote(await integrationSet(id, !inst[id])); } catch (e) { setNote(String(e)); }
+    await refresh();
+    setBusy("");
+  }
 
   useEffect(() => { agentHelperPath().then((p) => p && setHelper(p)).catch(() => {}); }, [s.agent.enabled]);
   useEffect(() => {
@@ -68,6 +88,20 @@ export function AiTab({ settings: s, update }: TabProps) {
         <Row label="Enable agent detection" desc={s.agent.enabled ? (server?.error ? `Could not listen on port ${s.agent.port}: ${server.error}` : `Listening on 127.0.0.1:${s.agent.port} (local only).`) : "Starts a local-only listener that agent hooks can call."}>
           <Toggle value={s.agent.enabled} onChange={(v) => update({ agent: { enabled: v } })} />
         </Row>
+      </Group>
+
+      <Group title="Connect your tools (one click)">
+        {CONNECT.map((c) => (
+          <Row key={c.id} label={c.label} desc={c.desc}>
+            {c.id === "antigravity" ? <span className="desc" style={{ color: "var(--sub)" }}>use Terminal</span> : (
+              <>
+                {inst[c.id] && <span style={{ color: "var(--sub)" }}>✓ Installed</span>}
+                <button className={`btn ${inst[c.id] ? "" : "primary"}`} disabled={busy === c.id} onClick={() => toggleInstall(c.id)}>{inst[c.id] ? "Remove" : "Install"}</button>
+              </>
+            )}
+          </Row>
+        ))}
+        {note && <div className="px-3.5 py-2.5 desc" style={{ color: "var(--sub)", borderTop: "1px solid var(--line)" }}>{note}</div>}
       </Group>
 
       <Group title="Agents to react to">
