@@ -44,6 +44,9 @@ export function normalizeConfig(raw: unknown): SpriteConfig {
   return {
     name: String(r.name ?? "Custom").slice(0, 60), frameWidth, frameHeight, animations, states,
     renderScale, smooth: typeof r.smooth === "boolean" ? r.smooth : renderScale < 0.5, quirks,
+    ...(Array.isArray(r.anchors)
+      ? { anchors: r.anchors.slice(0, 1024).map((a: any) => ({ x: Number(a?.x) || 0, y: Number(a?.y) || 0 })) }
+      : {}),
   };
 }
 
@@ -117,7 +120,18 @@ export function drawFrame(
   ctx.restore();
 }
 
-export async function loadBuiltinCat(): Promise<LoadedSprite> {
-  const cfg = await (await fetch("/characters/cat/sprite.json")).json();
-  return buildSprite(cfg, "/characters/cat/sheet.png");
+export interface BuiltinInfo { id: string; name: string }
+
+let manifest: Promise<BuiltinInfo[]> | null = null;
+/** Characters shipped inside the app (public/characters/index.json). */
+export function builtinCharacters(): Promise<BuiltinInfo[]> {
+  manifest ??= fetch("/characters/index.json").then((r) => r.json()).catch(() => [{ id: "cat", name: "Pixel Cat" }]);
+  return manifest;
 }
+
+export async function loadBuiltin(id: string): Promise<LoadedSprite> {
+  const cfg = await (await fetch(`/characters/${id}/sprite.json`)).json();
+  return buildSprite(cfg, `/characters/${id}/sheet.png`);
+}
+
+export const loadBuiltinCat = () => loadBuiltin("cat");

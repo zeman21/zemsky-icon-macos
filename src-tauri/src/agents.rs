@@ -32,11 +32,13 @@ fn query_param(url: &str, key: &str) -> Option<String> {
     })
 }
 
-pub fn dispatch(app: &AppHandle, agent: &str, raw: &str) -> Result<&'static str, String> {
+pub fn dispatch(app: &AppHandle, agent: &str, raw: &str, bid: Option<&str>) -> Result<&'static str, String> {
     let state = normalize(raw).ok_or_else(|| format!("unknown event '{raw}'"))?;
     let agent: String = agent.chars().filter(|c| c.is_ascii_alphanumeric()).take(24).collect();
     let agent = if agent.is_empty() { "custom".to_string() } else { agent.to_lowercase() };
-    let _ = app.emit("agent-event", json!({ "agent": agent, "state": state, "raw": raw }));
+    // bundle id of the app that spawned the hook (terminal / editor), used to jump back to it
+    let bid = bid.filter(|b| b.len() <= 80 && b.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-'));
+    let _ = app.emit("agent-event", json!({ "agent": agent, "state": state, "raw": raw, "bid": bid }));
     Ok(state)
 }
 
@@ -70,7 +72,7 @@ pub fn start(app: AppHandle, port: u16) -> Result<ServerHandle, String> {
                     }
                 }
                 let res = match ev {
-                    Some(e) => dispatch(&app, agent.as_deref().unwrap_or("custom"), &e),
+                    Some(e) => dispatch(&app, agent.as_deref().unwrap_or("custom"), &e, query_param(&url, "bid").as_deref()),
                     None => Err("missing event".into()),
                 };
                 let _ = match res {
@@ -108,7 +110,7 @@ if [ "$AGENT" = "cursor" ]; then
   esac
   printf '{"continue":true,"permission":"allow"}\n'
 fi
-[ -n "$EVENT" ] && curl -s -m 1 -X POST "http://127.0.0.1:${PORT}/event?agent=${AGENT}&event=${EVENT}" >/dev/null 2>&1
+[ -n "$EVENT" ] && curl -s -m 1 -X POST "http://127.0.0.1:${PORT}/event?agent=${AGENT}&event=${EVENT}&bid=${__CFBundleIdentifier}" >/dev/null 2>&1
 exit 0
 "#;
 

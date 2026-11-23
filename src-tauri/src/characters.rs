@@ -134,6 +134,45 @@ pub fn load_original(app: &AppHandle, id: &str) -> Result<String, String> {
     Ok(format!("data:image/png;base64,{}", STANDARD.encode(bytes)))
 }
 
+const PACK_FORMAT: &str = "pixelmate-character";
+
+/// Write a single shareable `.pixelmate` file (JSON: config + PNG as a data URL).
+pub fn export_pack(app: &AppHandle, id: &str, dest: &str) -> Result<(), String> {
+    let loaded = load(app, id)?;
+    let name = loaded["config"].get("name").and_then(Value::as_str).unwrap_or("Character").to_string();
+    let pack = json!({"format": PACK_FORMAT, "version": 1, "name": name, "config": loaded["config"], "image": loaded["image"]});
+    let dest = PathBuf::from(dest);
+    if dest.extension().and_then(|e| e.to_str()) != Some("pixelmate") {
+        return Err("Pack files must end in .pixelmate".into());
+    }
+    fs::write(dest, serde_json::to_string(&pack).map_err(|e| e.to_string())?).map_err(|e| e.to_string())
+}
+
+/// Import a `.pixelmate` pack as a new character.
+pub fn import_pack(app: &AppHandle, path: &str) -> Result<Value, String> {
+    let src = PathBuf::from(path);
+    let meta = fs::metadata(&src).map_err(|e| e.to_string())?;
+    if !meta.is_file() || meta.len() > 28 * 1024 * 1024 {
+        return Err("File is missing or too large".into());
+    }
+    let pack: Value = serde_json::from_str(&fs::read_to_string(&src).map_err(|e| e.to_string())?)
+        .map_err(|_| "This is not a PixelMate character pack".to_string())?;
+    if pack.get("format").and_then(Value::as_str) != Some(PACK_FORMAT) {
+        return Err("This is not a PixelMate character pack".into());
+    }
+    let png = decode_data_url(pack.get("image").and_then(Value::as_str).ok_or("pack has no image")?)?;
+    let config = pack.get("config").cloned().ok_or("pack has no config")?;
+    let name = pack.get("name").and_then(Value::as_str).unwrap_or("Imported").chars().take(40).collect::<String>();
+    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() % 100000).unwrap_or(0);
+    let id = format!("{}-{}", slug(&name), stamp);
+    let d = dir(app)?.join(&id);
+    fs::create_dir_all(&d).map_err(|e| e.to_string())?;
+    fs::write(d.join("sheet.png"), &png).map_err(|e| e.to_string())?;
+    fs::write(d.join("original.png"), &png).map_err(|e| e.to_string())?;
+    fs::write(d.join("sprite.json"), serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+    Ok(json!({"id": id, "name": name}))
+}
+
 pub fn save_config(app: &AppHandle, id: &str, config: &Value) -> Result<(), String> {
     if !valid_id(id) || id == "cat" {
         return Err("This character cannot be modified".into());

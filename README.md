@@ -10,7 +10,7 @@ A lightweight pixel cat that lives on your macOS desktop. Transparent, always on
 
 ## Install
 
-**From a DMG** – open `PixelMate_0.1.0_aarch64.dmg`, drag PixelMate to Applications, launch it.
+**From a DMG** – open `PixelMate_0.1.0_universal.dmg`, drag PixelMate to Applications, launch it.
 Builds from this repo are ad-hoc signed, not notarized. If Gatekeeper blocks a *downloaded* copy: right-click → Open, or
 `xattr -dr com.apple.quarantine /Applications/PixelMate.app`.
 
@@ -53,6 +53,30 @@ Settings → **Notifications**. The character talks through pixel-style speech b
 - **Reminders** – drink water, eye rest (20-20-20), posture, stretch, lunch, bedtime, plus any custom ones (repeat every N minutes, or daily at a time). Reminders have *Later 10m* / *OK* buttons, wait for a pause while you are typing, and are held back during **quiet hours**.
 - **Extras** – time-of-day greeting, welcome back after a long break, random chatter, "Geli ih!" when poked / "purr~" when petted, agent updates (done / error / needs you), and a break suggestion after ~45 min of non-stop typing (only key *counts* are used).
 - Optional 8-bit blip sound. Everything is driven by a single timer armed for the next due item, so there is no polling.
+
+## Focus timer (Pomodoro)
+
+Settings → **Focus** or menu bar → *Start / Stop Focus*. The character works at its laptop while the 🍅 badge counts down under it, then cheers when it is time to rest. Durations, sessions per round and the badge are configurable.
+
+## Calendar alerts (Outlook, Google, iCloud)
+
+Settings → **Calendar**: paste a published **.ics link** and the character tells you before meetings (with a **Join** button for Teams / Zoom / Meet links). Recurring meetings, time zones (including Outlook's Windows zone names), exceptions and cancellations are handled. For Outlook on the web: Settings → Calendar → Shared calendars → *Publish a calendar* → copy the ICS link. Work/school accounts often have publishing disabled by an admin. Feeds are fetched by the app only (every 15 min, https only) and treated like a password. Reading Apple Calendar / Exchange accounts directly (EventKit) is not implemented.
+
+## Bond & accessories
+
+Daily visits, finished focus sessions, acknowledged reminders, finished agent tasks and petting earn XP (with daily caps). Levels unlock accessories (bow, glasses, scarf, crown) that are drawn on the bundled characters.
+
+## Bundled characters and sharing
+
+Cat, Kuro, Shiro, Abu, Bunny and Puppy ship with the app. Export your own character as a single `.pixelmate` file and import one from a friend (Settings → Character → Share).
+
+Clicking an agent's result bubble (marked ↗) brings the terminal / editor that ran it to the front.
+
+## Known limits
+
+- The universal build (Apple Silicon + Intel) is built, but only the Apple Silicon half has been run on a real Mac; not notarized (see the Gatekeeper note above).
+- Notarization and auto-update need an Apple Developer ID and signing keys that this repo does not contain.
+- Display hot-plug and fullscreen-Space visibility are implemented but only verified by compiling, not on multiple monitors.
 
 ## Custom characters
 

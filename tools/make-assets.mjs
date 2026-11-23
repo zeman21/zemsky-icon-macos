@@ -128,6 +128,7 @@ class Layer {
 
 // ---------- cat drawing (chibi, front-facing; direction is shown by head/pupil lean + mirroring) ----------
 const hcxBase = 16;
+let EAR = "cat"; // "cat" | "bunny" | "dog"
 function cat(p = {}) {
   const d = {
     pose: "stand", oy: 0, hx: 0, hy: 0, bodyDx: 0, bw: 7.5, bh: 5, bodyY: 24.5,
@@ -138,6 +139,7 @@ function cat(p = {}) {
   };
   const L = new Layer();
   const hcx = hcxBase + d.hx, hcy = 12.5 + d.hy + d.oy;
+  L.head = { x: Math.round(hcx), y: Math.round(d.pose === "sleep" ? 19 + d.oy : hcy) };
   const by = d.bodyY + d.oy;
 
   const tail = () => {
@@ -205,10 +207,23 @@ function cat(p = {}) {
 function drawHead(L, hcx, hcy, d, flat) {
   // ears (drawn first so the head overlaps their base)
   const [el, er] = d.ear;
+  if (EAR === "bunny") {
+    // tall narrow ears
+    const dl = Math.max(0, el) * 2, dr = Math.max(0, er) * 2;
+    L.ear(hcx - 5, hcy - 12 + dl, 8, 5, "b");
+    L.ear(hcx + 5, hcy - 12 + dr, 8, 5, "b");
+    L.ear(hcx - 5, hcy - 10 + dl, 5, 3, "p");
+    L.ear(hcx + 5, hcy - 10 + dr, 5, 3, "p");
+  } else if (EAR === "dog") {
+    // floppy ears hanging at the sides (drawn behind the head)
+    L.ell(hcx - 10.5, hcy - 1, 3.3, 6, "d");
+    L.ell(hcx + 10.5, hcy - 1, 3.3, 6, "d");
+  } else {
   L.ear(hcx - 8 + Math.min(0, el) * 2, hcy - 12 + Math.max(0, -el) * 0 + Math.max(0, el) * 2, 7, 7, "b");
   L.ear(hcx + 8 + Math.max(0, er) * 2 * 0 - Math.min(0, er) * 0 + Math.abs(Math.min(0, er)) * 0 + Math.max(0, er) * 2, hcy - 12 + Math.max(0, er) * 2, 7, 7, "b");
   L.ear(hcx - 8, hcy - 10 + Math.max(0, el) * 2, 4, 3, "p");
   L.ear(hcx + 8, hcy - 10 + Math.max(0, er) * 2, 4, 3, "p");
+  }
   L.ell(hcx, hcy, 11, flat ? 7 : 8.5, "b");
   L.ell(hcx - 9, hcy + 3, 3, 2.6, "b");
   L.ell(hcx + 9, hcy + 3, 3, 2.6, "b");
@@ -336,6 +351,7 @@ function sparkle(t) {
 }
 function fr(c, front = [], back = []) {
   const f = new Layer();
+  f.head = c.head;
   for (const b of back) f.over(b);
   f.over(c);
   for (const x of front) f.over(x);
@@ -343,6 +359,7 @@ function fr(c, front = [], back = []) {
 }
 
 // ---------- animation definitions ----------
+function buildAnims() {
 const anims = [];
 const add = (name, fps, loop, frames) => anims.push({ name, fps, loop, frames });
 const P = (o) => fr(cat(o));
@@ -407,8 +424,11 @@ add("yawn", 3, false, [
   P({ eye: "closed", mouth: "big", hy: -1 }),
 ]);
 add("wiggle", 8, true, [-1, 0, 1].map((dx, i) => P({ bh: 3.8, bw: 9, bodyY: 26, hy: 2, eye: "wide", pupil: [1, 0], bodyDx: dx, tail: dx, tailUp: 0.9, ear: [0, 0], hx: dx })));
+return anims;
+}
 
 // ---------- sheet ----------
+function writeCharacter(id, name, anims) {
 const COLS = 8;
 const total = anims.reduce((n, a) => n + a.frames.length, 0);
 const ROWS = Math.ceil(total / COLS);
@@ -417,17 +437,19 @@ const sheetW = COLS * S,
 const sheet = Buffer.alloc(sheetW * sheetH * 4);
 let idx = 0;
 const json = {
-  name: "Pixel Cat",
+  name,
   frameWidth: S,
   frameHeight: S,
   anchor: { x: 0.5, y: 1 },
   animations: {},
   states: {},
+  anchors: [],
 };
 for (const a of anims) {
   json.animations[a.name] = { start: idx, count: a.frames.length, fps: a.fps, loop: a.loop };
   json.states[a.name] = a.name;
   for (const f of a.frames) {
+    json.anchors.push(f.head ? { x: f.head.x, y: f.head.y } : { x: 16, y: 12 });
     const cx = (idx % COLS) * S,
       cy = Math.floor(idx / COLS) * S;
     for (let y = 0; y < S; y++)
@@ -444,9 +466,53 @@ for (const a of anims) {
     idx++;
   }
 }
-mkdirSync(resolve(root, "public/characters/cat"), { recursive: true });
-writeFileSync(resolve(root, "public/characters/cat/sheet.png"), encodePNG(sheetW, sheetH, sheet));
-writeFileSync(resolve(root, "public/characters/cat/sprite.json"), JSON.stringify(json, null, 2) + "\n");
+mkdirSync(resolve(root, `public/characters/${id}`), { recursive: true });
+writeFileSync(resolve(root, `public/characters/${id}/sheet.png`), encodePNG(sheetW, sheetH, sheet));
+writeFileSync(resolve(root, `public/characters/${id}/sprite.json`), JSON.stringify(json, null, 2) + "\n");
+return { sheet, sheetW, sheetH, total };
+}
+
+
+// ---------- all bundled characters ----------
+const BASE_PAL = { ...PAL };
+const VARIANTS = [
+  { id: "cat", name: "Pixel Cat", ear: "cat", pal: {} },
+  { id: "kuro", name: "Kuro (black cat)", ear: "cat", pal: { b: [74, 68, 88], d: [50, 44, 64], l: [128, 120, 146], e: [255, 208, 72], O: [36, 28, 44], P: [200, 110, 150], p: [240, 130, 160] } },
+  { id: "shiro", name: "Shiro (white cat)", ear: "cat", pal: { b: [252, 250, 254], d: [212, 206, 226], l: [255, 244, 240], O: [120, 96, 112], P: [255, 170, 190] } },
+  { id: "abu", name: "Abu (gray tabby)", ear: "cat", pal: { b: [170, 178, 194], d: [124, 132, 152], l: [232, 236, 244], O: [74, 70, 92] } },
+  { id: "bunny", name: "Bunny", ear: "bunny", pal: { b: [255, 246, 248], d: [240, 200, 214], l: [255, 255, 255], p: [255, 160, 184], O: [140, 100, 120] } },
+  { id: "puppy", name: "Puppy", ear: "dog", pal: { b: [236, 190, 130], d: [176, 116, 70], l: [255, 240, 214], p: [255, 140, 150], O: [96, 58, 48] } },
+];
+let catResult = null;
+const gallery = [];
+const manifest = [];
+for (const v of VARIANTS) {
+  Object.assign(PAL, BASE_PAL, v.pal);
+  EAR = v.ear;
+  const r = writeCharacter(v.id, v.name, buildAnims());
+  if (v.id === "cat") catResult = r;
+  gallery.push(r);
+  manifest.push({ id: v.id, name: v.name });
+}
+if (process.argv[3]) {
+  // gallery preview: first row of every character, 4x, on a light background
+  const k = 4, cols = 8, W2 = cols * S * k, H2 = gallery.length * S * k;
+  const g = Buffer.alloc(W2 * H2 * 4);
+  gallery.forEach((r, row) => {
+    for (let y = 0; y < S * k; y++) for (let x = 0; x < W2; x++) {
+      const so = (((y / k) | 0) * r.sheetW + ((x / k) | 0)) * 4, o = ((row * S * k + y) * W2 + x) * 4;
+      const a = r.sheet[so + 3] / 255;
+      for (let c = 0; c < 3; c++) g[o + c] = Math.round(r.sheet[so + c] * a + 232 * (1 - a));
+      g[o + 3] = 255;
+    }
+  });
+  writeFileSync(process.argv[3], encodePNG(W2, H2, g));
+}
+Object.assign(PAL, BASE_PAL);
+EAR = "cat";
+writeFileSync(resolve(root, "public/characters/index.json"), JSON.stringify(manifest, null, 2) + "\n");
+const { sheet, sheetW, sheetH, total } = catResult;
+const anims = { length: 18 };
 
 // preview (8x) for eyeballing
 {
@@ -537,4 +603,4 @@ function faceLayer() {
       if (T.get(Math.floor(x / k), Math.floor(y / k))) img[(y * N + x) * 4 + 3] = 255;
   writeFileSync(resolve(root, "src-tauri/icons/tray.png"), encodePNG(N, N, img));
 }
-console.log(`sheet ${sheetW}x${sheetH}, ${total} frames, ${anims.length} animations`);
+console.log(`${VARIANTS.length} characters; cat sheet ${sheetW}x${sheetH}, ${total} frames`);

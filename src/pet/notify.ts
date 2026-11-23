@@ -1,5 +1,6 @@
-import { AGENT_LABEL, buttonLabels, pick, reminderText, timeGreeting, type LineKey } from "../shared/messages";
+import { AGENT_LABEL, buttonLabels, calendarText, pick, reminderText, timeGreeting, type LineKey } from "../shared/messages";
 import type { Settings } from "../shared/types";
+import type { CalEvent } from "./ics";
 import { inQuiet, nextDue, quietEnd, sig } from "./reminders";
 
 export interface PresentOpts {
@@ -7,6 +8,8 @@ export interface PresentOpts {
   seconds: number;
   sound: boolean;
   onClose: () => void;
+  /** Clicking the bubble body (not a button). */
+  onClick?: () => void;
 }
 export interface Host {
   settings(): Settings;
@@ -14,9 +17,15 @@ export interface Host {
   close(): void;
   /** True while the user is typing right now (reminders wait for a pause). */
   typing(): boolean;
+  /** Optional: open a meeting link. */
+  openUrl?(url: string): void;
+  /** Optional: jump to the app that ran an agent (bundle id). */
+  open?(bid: string): void;
+  /** Optional: called when the user acknowledges a reminder (for bond XP). */
+  award?(kind: "reminder"): void;
 }
 
-interface Say { text: string; kind: "reminder" | "chat" | "test" }
+interface Say { text: string; kind: "reminder" | "chat" | "test"; onClick?: () => void; link?: string }
 
 export function fmtDuration(secs: number): string {
   const s = Math.round(secs);
@@ -43,6 +52,8 @@ export class Notifier {
   private pumpTimer: ReturnType<typeof setTimeout> | undefined;
   private deferred = 0;
   private lastChat = 0;
+  private cal = new Map<string, { title: string; start: number; link?: string }>();
+  private calSeen = new Set<string>();
   private typingRun = { start: 0, last: 0, praised: 0 };
 
   constructor(private host: Host) {}
@@ -74,6 +85,7 @@ export class Notifier {
     clearTimeout(this.timer); clearTimeout(this.pumpTimer);
     this.timer = this.pumpTimer = undefined;
     this.due.clear(); this.sigs.clear(); this.snoozed.clear(); this.queue = [];
+    this.cal.clear(); this.calSeen.clear();
     if (this.showing) this.host.close();
     this.showing = false;
   }
@@ -94,6 +106,14 @@ export class Notifier {
       if (k === "chat") {
         this.due.set(k, now + rand(0.7, 1.3) * n.chatterEvery * 60_000);
         this.chat(pick(n.language, "chatter"), n.chatter);
+      } else if (k.startsWith("cal:")) {
+        const c = this.cal.get(k);
+        this.due.delete(k); this.cal.delete(k); this.calSeen.add(k);
+        if (c) {
+          const cs = this.host.settings().calendar;
+          const mins = Math.max(0, Math.round((c.start - now) / 60_000));
+          this.enqueue({ text: calendarText(c.title, c.start, mins, n.language, cs.titles), kind: "reminder", link: c.link });
+        }
       } else if (k.startsWith("snooze:")) {
         this.due.delete(k);
         this.enqueue({ text: this.snoozed.get(k) ?? "", kind: "reminder" });
@@ -104,6 +124,21 @@ export class Notifier {
         if (next === null) this.due.delete(k); else this.due.set(k, next);
         if (r) this.enqueue({ text: reminderText(r, n.language), kind: "reminder" });
       }
+    }
+    this.arm();
+  }
+
+  /** Replace the scheduled calendar alerts. Already-announced events are never repeated. */
+  setCalendar(events: CalEvent[], leadMin: number, now = Date.now()) {
+    if (!this.n.enabled) return;
+    for (const k of [...this.due.keys()]) if (k.startsWith("cal:")) this.due.delete(k);
+    this.cal.clear();
+    if (this.calSeen.size > 300) this.calSeen.clear();
+    for (const e of events) {
+      const key = `cal:${e.uid}|${e.start}`;
+      if (this.calSeen.has(key) || e.start < now - 60_000) continue;
+      this.due.set(key, Math.max(now + 1000, e.start - leadMin * 60_000));
+      this.cal.set(key, { title: e.title, start: e.start, link: e.link });
     }
     this.arm();
   }
@@ -157,11 +192,15 @@ export class Notifier {
     this.host.present(s.text, {
       seconds: isReminder ? Math.max(12, n.bubbleSeconds * 2.5) : n.bubbleSeconds,
       sound: n.sound && s.kind !== "chat",
-      buttons: isReminder ? [
+      buttons: isReminder && s.link ? [
+        { label: lang === "id" ? "Gabung" : "Join", primary: true, onClick: () => { this.host.award?.("reminder"); this.host.openUrl?.(s.link!); this.host.close(); } },
+        { label: L.ok, onClick: () => this.host.close() },
+      ] : isReminder ? [
         { label: L.later, onClick: () => { this.snooze(s.text, SNOOZE_MS); this.host.close(); this.say(pick(lang, "snooze")); } },
-        { label: L.ok, primary: true, onClick: () => this.host.close() },
+        { label: L.ok, primary: true, onClick: () => { this.host.award?.("reminder"); this.host.close(); } },
       ] : undefined,
       onClose: () => { this.showing = false; this.pump(); },
+      onClick: s.onClick,
     });
     if (s.kind === "chat") this.lastChat = Date.now();
   }
@@ -171,12 +210,12 @@ export class Notifier {
   say(text: string) { this.enqueue({ text, kind: "test" }); }
 
   /** Optional chatter: respects its toggle, quiet hours, and doesn't pile up. */
-  chat(text: string, enabled = true, force = false) {
+  chat(text: string, enabled = true, force = false, onClick?: () => void) {
     const n = this.n;
     if (!n.enabled || !enabled || this.showing) return;
     if (inQuiet(new Date(), n.quiet)) return;
     if (!force && Date.now() - this.lastChat < MIN_CHAT_GAP) return;
-    this.enqueue({ text, kind: "chat" });
+    this.enqueue({ text, kind: "chat", onClick });
   }
 
   greet() { this.chat(timeGreeting(new Date(), this.n.language), this.n.greetings, true); }
@@ -186,11 +225,12 @@ export class Notifier {
   remark(key: "sit" | "stand") { this.chat(pick(this.n.language, key), this.n.reactions, true); }
   purr() { this.chat(pick(this.n.language, "purr"), this.n.reactions); }
 
-  agent(kind: "completed" | "error" | "waiting", agent: string, secs?: number) {
+  agent(kind: "completed" | "error" | "waiting", agent: string, secs?: number, bid?: string) {
     const key: LineKey = kind === "completed" ? "agentDone" : kind === "error" ? "agentError" : "agentWait";
     const label = AGENT_LABEL[agent] ?? agent;
     const took = secs !== undefined && secs >= 15 && kind !== "waiting" ? ` (${fmtDuration(secs)})` : "";
-    this.chat(`${pick(this.n.language, key)}  · ${label}${took}`, this.n.agentReactions, kind !== "waiting");
+    const open = bid && this.host.open ? () => this.host.open!(bid) : undefined;
+    this.chat(`${pick(this.n.language, key)}  · ${label}${took}${open ? "  ↗" : ""}`, this.n.agentReactions, kind !== "waiting", open);
   }
 
   /** Called on every key press: after ~45 min of continuous typing, suggest a break. */
