@@ -25,8 +25,8 @@ mod mac {
     use std::{
         ffi::{c_char, c_int, c_void, CString},
         sync::{
-            atomic::{AtomicBool, Ordering},
-            Arc, Once,
+            atomic::Ordering,
+            mpsc, Mutex, Once,
         },
         time::Duration,
     };
@@ -63,10 +63,9 @@ mod mac {
         START.call_once(move || {
             std::thread::spawn(move || {
                 let Some(f) = load() else { return };
-                let playing = Arc::new(AtomicBool::new(false));
                 let mut last = false;
                 loop {
-                    std::thread::sleep(Duration::from_millis(2000));
+                    std::thread::sleep(Duration::from_millis(1000));
                     if !WANT.load(Ordering::Relaxed) {
                         if last {
                             last = false;
@@ -74,11 +73,14 @@ mod mac {
                         }
                         continue;
                     }
-                    let p = playing.clone();
-                    let block = RcBlock::new(move |v: u8| p.store(v != 0, Ordering::Relaxed));
+                    let (tx, rx) = mpsc::channel::<bool>();
+                    let tx = Mutex::new(tx);
+                    let block = RcBlock::new(move |v: u8| {
+                        let _ = tx.lock().unwrap().send(v != 0);
+                    });
                     unsafe { f(dispatch_get_global_queue(0, 0), &*block) };
-                    // The callback fires asynchronously; the result lands in time for the next tick.
-                    let now = playing.load(Ordering::Relaxed);
+                    // The callback fires asynchronously; wait for this poll's own answer.
+                    let Ok(now) = rx.recv_timeout(Duration::from_millis(800)) else { continue };
                     if now != last {
                         last = now;
                         let _ = app.emit("music", now);

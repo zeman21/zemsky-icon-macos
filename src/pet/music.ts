@@ -15,7 +15,7 @@ export class MusicFx {
       15%{opacity:1}100%{opacity:0;transform:translate(var(--dx),-64px) scale(1.15) rotate(14deg)}}`;
     document.head.appendChild(style);
     this.layer = document.createElement("div");
-    Object.assign(this.layer.style, { position: "fixed", left: "0", top: "0", pointerEvents: "none", display: "none" } as CSSStyleDeclaration);
+    Object.assign(this.layer.style, { position: "fixed", left: "0", top: "0", pointerEvents: "none", display: "none", zIndex: "2147483000" } as CSSStyleDeclaration);
     document.body.appendChild(this.layer);
   }
 
@@ -25,7 +25,7 @@ export class MusicFx {
     if (this.timer !== undefined) return;
     this.layer.style.display = "block";
     this.spawn();
-    this.timer = setInterval(() => this.spawn(), 650);
+    this.timer = setInterval(() => this.spawn(), 500);
   }
 
   stop() {
@@ -48,8 +48,8 @@ export class MusicFx {
     n.textContent = NOTES[Math.floor(Math.random() * NOTES.length)];
     Object.assign(n.style, {
       position: "fixed",
-      left: `${this.cx + side * (this.w * 0.42) - size / 2 + (Math.random() - 0.5) * 8}px`,
-      top: `${this.top + this.w * 0.15 + Math.random() * this.w * 0.3}px`,
+      left: `${this.cx + side * (this.w * 0.55) - size / 2 + (Math.random() - 0.5) * 8}px`,
+      top: `${this.top + this.w * 0.35 + Math.random() * this.w * 0.4}px`,
       font: `700 ${size}px ui-rounded,-apple-system,sans-serif`,
       color: COLORS[Math.floor(Math.random() * COLORS.length)],
       textShadow: "0 1px 2px rgba(0,0,0,.35)",

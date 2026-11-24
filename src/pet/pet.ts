@@ -759,13 +759,12 @@ export async function startPet() {
     focus.dispatch("stop");
   }
 
-  let musicChat: number | undefined;
+  let musicSaid = false;
   function syncMusic() {
-    window.clearInterval(musicChat); musicChat = undefined;
+    if (!musicOn) musicSaid = false;
     if (running && musicOn && settings.musicDance) {
       const say = () => notifier.chat(pick(settings.notify.language, "music"), settings.notify.reactions, true);
-      say();
-      musicChat = window.setInterval(say, 10000);
+      if (!musicSaid) { musicSaid = true; say(); }
     }
     if (running && musicOn && settings.musicDance) {
       const a = sprite && ["wiggle", "happy"].find((n) => hasAnim(sprite!.cfg, n));
