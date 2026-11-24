@@ -759,7 +759,14 @@ export async function startPet() {
     focus.dispatch("stop");
   }
 
+  let musicChat: number | undefined;
   function syncMusic() {
+    window.clearInterval(musicChat); musicChat = undefined;
+    if (running && musicOn && settings.musicDance) {
+      const say = () => notifier.chat(pick(settings.notify.language, "music"), settings.notify.reactions, true);
+      say();
+      musicChat = window.setInterval(say, 10000);
+    }
     if (running && musicOn && settings.musicDance) {
       const a = sprite && ["wiggle", "happy"].find((n) => hasAnim(sprite!.cfg, n));
       sm.hold("music", a ?? "idle", PRIORITY.music);
