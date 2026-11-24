@@ -7,6 +7,7 @@ import { Notifier } from "./notify";
 import { FocusController, type FocusAction } from "./focus";
 import { pick } from "../shared/messages";
 import { drawAccessories } from "./accessories";
+import { MusicFx } from "./music";
 import { CalendarSync } from "./calendar";
 import { AgentHistory } from "./history";
 import { Panel } from "./panel";
@@ -37,6 +38,8 @@ export async function startPet() {
   document.body.appendChild(canvas);
   const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
   const bubble = new Bubble();
+  const musicFx = new MusicFx();
+  let musicOn = false, lastDanceFlip = 0;
   const history = new AgentHistory();
   let apps: string[] | null = null;
   const getApps = async () => (apps ??= await listApps().catch(() => []));
@@ -217,8 +220,11 @@ export async function startPet() {
     y = Math.min(Math.max(y, ch), Math.max(ch, H));
   }
 
+  const dancing = () => musicOn && settings.musicDance && !dragging && sm.current(performance.now()).key === "music";
+  const danceOffset = (now: number) => (dancing() ? Math.abs(Math.sin(now / 210)) * ch * 0.09 : 0);
+
   const jumpOffset = (now: number) => {
-    if (!jump) return 0;
+    if (!jump) return danceOffset(now);
     const t = (now - jump.start) / jump.dur;
     if (t >= 1) { jump = null; return 0; }
     return Math.sin(Math.PI * t) * ch * 0.42;
@@ -228,6 +234,7 @@ export async function startPet() {
     const t = `translate3d(${dev(x - cw / 2)}px,${dev(y - ch - jumpOffset(now))}px,0)`;
     if (t !== lastTransform) { canvas.style.transform = t; lastTransform = t; }
     focus.position(x, y, W);
+    if (musicFx.active) musicFx.position(x, y - ch - jumpOffset(now), cw);
     if (panel.visible) panel.position(x, y - ch - jumpOffset(now), y, W);
     if (bubble.visible) bubble.position(x, y - ch - jumpOffset(now), y, W);
   }
@@ -320,12 +327,16 @@ export async function startPet() {
       }
       clampPos();
     }
+    if (dancing()) {
+      if (now - lastDanceFlip > 640) { lastDanceFlip = now; facing = facing > 0 ? -1 : 1; }
+      if (!musicFx.active) musicFx.start();
+    } else if (musicFx.active) musicFx.stop();
     place(now);
     draw(now);
   }
 
   function needsSmooth() {
-    return dragging || !!jump || !!lunge || (!!moveTarget && (state === "walk" || state === "run"));
+    return dragging || !!jump || !!lunge || dancing() || (!!moveTarget && (state === "walk" || state === "run"));
   }
 
   function schedule(now: number) {
@@ -726,6 +737,7 @@ export async function startPet() {
     if (!wasRunning || first) resume();
     anim = sprite ? resolveAnim(sprite.cfg, state, next.fps) : null;
     updateRest();
+    syncMusic();
     scheduleWander();
     notifier.sync();
     calendar.configure();
@@ -743,7 +755,16 @@ export async function startPet() {
     panel.hide();
     notifier.stop();
     calendar.stop();
+    musicFx.stop();
     focus.dispatch("stop");
+  }
+
+  function syncMusic() {
+    if (running && musicOn && settings.musicDance) {
+      const a = sprite && ["wiggle", "happy"].find((n) => hasAnim(sprite!.cfg, n));
+      sm.hold("music", a ?? "idle", PRIORITY.music);
+    } else { sm.release("music"); musicFx.stop(); }
+    wake();
   }
 
   function resume() {
@@ -769,6 +790,7 @@ export async function startPet() {
     if (meter.isFast(now)) bump(0.02);
     wake();
   });
+  await listen<boolean>("music", (e) => { musicOn = !!e.payload; syncMusic(); });
   await listen<Settings>("settings-changed", (e) => { void applySettings(withDefaults(e.payload)); });
   await listen<{ agent: string; state: AgentStateName; bid?: string | null }>("agent-event", (e) => onAgentEvent(e.payload));
   await listen<string>("character-changed", (e) => {

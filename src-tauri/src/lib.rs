@@ -2,6 +2,7 @@ mod agents;
 mod characters;
 mod input;
 mod integrations;
+mod media;
 mod settings;
 
 use serde_json::{json, Value};
@@ -149,6 +150,7 @@ fn apply(app: &AppHandle, s: &Value) {
     // Global monitors only exist while the pet is visible.
     let want_keys = enabled && bool_of(s, "keyboardInteraction", true);
     input::configure(app, enabled, want_keys);
+    media::configure(app, enabled && bool_of(s, "musicDance", true));
 
     // Launch at login
     let al = app.autolaunch();

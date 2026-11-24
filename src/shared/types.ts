@@ -114,6 +114,8 @@ export interface Settings {
   mouseInteraction: boolean;
   followCursor: boolean;
   keyboardInteraction: boolean;
+  /** Dance with floating notes while music / YouTube is playing. */
+  musicDance: boolean;
   randomMotion: boolean;
   sleepMode: boolean;
   wanderEvery: number;
@@ -141,6 +143,7 @@ export const DEFAULT_SETTINGS: Settings = {
   mouseInteraction: true,
   followCursor: false,
   keyboardInteraction: true,
+  musicDance: true,
   randomMotion: true,
   sleepMode: true,
   wanderEvery: 15,
