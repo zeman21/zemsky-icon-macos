@@ -191,7 +191,7 @@ export class Notifier {
     const isReminder = s.kind === "reminder";
     this.host.present(s.text, {
       seconds: isReminder ? Math.max(12, n.bubbleSeconds * 2.5) : n.bubbleSeconds,
-      sound: n.sound && s.kind !== "chat",
+      sound: n.sound,
       buttons: isReminder && s.link ? [
         { label: lang === "id" ? "Gabung" : "Join", primary: true, onClick: () => { this.host.award?.("reminder"); this.host.openUrl?.(s.link!); this.host.close(); } },
         { label: L.ok, onClick: () => this.host.close() },

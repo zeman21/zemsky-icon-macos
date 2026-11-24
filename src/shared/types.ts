@@ -59,7 +59,7 @@ export const DEFAULT_NOTIFY: NotifySettings = {
   enabled: true,
   language: "id",
   bubbleSeconds: 8,
-  sound: false,
+  sound: true,
   quiet: { enabled: false, from: "22:00", to: "07:00" },
   greetings: true,
   chatter: true,

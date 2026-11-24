@@ -111,19 +111,33 @@ export class Bubble {
     return x >= r.left - 2 && x <= r.right + 2 && y >= r.top - 2 && y <= r.bottom + 10;
   }
 
+  /** A synthesized "mee-ow": a sawtooth voice with a rising then falling pitch through vowel formants. */
   private blip() {
     try {
       this.audio ??= new AudioContext();
-      const a = this.audio, t = a.currentTime;
-      for (const [i, f] of [[0, 784], [1, 1047]] as const) {
-        const o = a.createOscillator(), g = a.createGain();
-        o.type = "square"; o.frequency.value = f;
-        g.gain.setValueAtTime(0.0001, t + i * 0.09);
-        g.gain.exponentialRampToValueAtTime(0.06, t + i * 0.09 + 0.01);
-        g.gain.exponentialRampToValueAtTime(0.0001, t + i * 0.09 + 0.08);
-        o.connect(g).connect(a.destination);
-        o.start(t + i * 0.09); o.stop(t + i * 0.09 + 0.09);
+      const a = this.audio;
+      if (a.state === "suspended") void a.resume();
+      const t = a.currentTime, v = 0.9 + Math.random() * 0.25, dur = 0.5;
+      const o = a.createOscillator();
+      o.type = "sawtooth";
+      o.frequency.setValueAtTime(420 * v, t);
+      o.frequency.exponentialRampToValueAtTime(900 * v, t + 0.14);
+      o.frequency.exponentialRampToValueAtTime(380 * v, t + dur);
+      const out = a.createGain();
+      out.gain.setValueAtTime(0.0001, t);
+      out.gain.exponentialRampToValueAtTime(0.16, t + 0.04);
+      out.gain.setValueAtTime(0.16, t + 0.3);
+      out.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      // "ee" (high formants) opening into "ow" (low formants)
+      for (const [f0, f1, q, gain] of [[700, 550, 6, 1], [2400, 900, 8, 0.6]] as const) {
+        const bp = a.createBiquadFilter(), g = a.createGain();
+        bp.type = "bandpass"; bp.Q.value = q; g.gain.value = gain;
+        bp.frequency.setValueAtTime(f0, t);
+        bp.frequency.linearRampToValueAtTime(f1, t + dur);
+        o.connect(bp).connect(g).connect(out);
       }
+      out.connect(a.destination);
+      o.start(t); o.stop(t + dur + 0.02);
     } catch { /* audio is optional */ }
   }
 }
